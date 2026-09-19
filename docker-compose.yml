@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: achar_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: achar_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: achar_password
+    ports:
+      - '5432:5432'
+    volumes:
+      - achar_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: achar_api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - '3001:3001'
+    environment:
+      NODE_ENV: development
+      PORT: 3001
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USERNAME: postgres
+      DB_PASSWORD: achar_password
+      DB_NAME: achar_db
+      JWT_SECRET: change-this-in-production-please
+      JWT_EXPIRES_IN: 7d
+      CORS_ORIGIN: 'https://admin-panel-main-xig4.vercel.app,http://localhost:3000'
+    volumes:
+      - .:/app
+      - /app/node_modules
+
+volumes:
+  achar_pgdata:
