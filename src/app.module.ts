@@ -22,6 +22,7 @@ import { SeoModule } from './seo/seo.module';
 import { TestimonialsModule } from './testimonials/testimonials.module';
 import { PartnersModule } from './partners/partners.module';
 import { ClientModule } from './client/client.module';
+import { MailModule } from './common/mail/mail.module';
 
 @Module({
   imports: [
@@ -53,6 +54,7 @@ import { ClientModule } from './client/client.module';
     TestimonialsModule,
     PartnersModule,
     ClientModule,
+    MailModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },

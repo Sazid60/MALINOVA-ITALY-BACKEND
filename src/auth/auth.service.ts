@@ -18,6 +18,7 @@ import { PasswordResetRequestDTO } from './dto/reset-password/password-reset-req
 import { PasswordResetDTO } from './dto/reset-password/password-reset.dto';
 import { OtpStore } from './otp.store';
 import { UpdateProfileDto } from './dto/update-profile.dto';
+import { MailService } from '../common/mail/mail.service';
 
 interface ProfileCacheEntry {
   profile: any;
@@ -77,6 +78,7 @@ export class AuthService {
     private jwtService: JwtService,
     private config: ConfigService,
     private otpStore: OtpStore,
+    private mailService: MailService,
   ) {}
 
   // ── VALIDATE (used by LocalStrategy) ──────────────────────
@@ -357,13 +359,7 @@ export class AuthService {
     if (!user) throw new NotFoundException('No account found with this email');
 
     const otp = this.otpStore.generate(dto.Email);
-    this.logger.warn(
-      `\n---------------------------------------------\n` +
-      `[SIMULATED EMAIL] To: ${dto.Email}\n` +
-      `Subject: Password Reset OTP\n` +
-      `OTP Code: ${otp}\n` +
-      `---------------------------------------------`
-    );
+    await this.mailService.sendPasswordResetOtp(user.email, otp, user.name);
 
     if (this.config.get('NODE_ENV') !== 'production') return otp;
     return '******';
@@ -447,11 +443,11 @@ export class AuthService {
     return [...permMap.entries()].filter(([, v]) => v).map(([k]) => k);
   }
 
-  // ── ADMIN PASSWORD RESET (OTP BASED) ──────────────────────
+  // ── ADMIN PASSWORD RESET (EMAIL/OTP BASED) ──────────────────────
   private adminResetOtps = new Map<string, { otp: string; expiresAt: number }>();
 
   async adminResetPasswordRequest(dto: { identifier: string }) {
-    let identifier = dto.identifier.trim();
+    const identifier = dto.identifier.trim();
     const isEmail = identifier.includes('@');
 
     const user = await this.userRepo.findOne({
@@ -461,57 +457,27 @@ export class AuthService {
     });
 
     if (!user) {
-      throw new NotFoundException('Account not found with the provided email or mobile number');
+      throw new NotFoundException('Account not found with the provided email or identifier');
+    }
+
+    if (!user.email) {
+      throw new BadRequestException('No email address is linked to this account.');
     }
 
     // Generate a secure 4-digit OTP
     const otp = Math.floor(1000 + Math.random() * 9000).toString();
-    this.adminResetOtps.set(identifier.toLowerCase(), {
-      otp,
-      expiresAt: Date.now() + 5 * 60 * 1000, // 5 minutes expiration
-    });
+    const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutes expiration
 
-    if (isEmail) {
-      if (!user.mobile_number) {
-        throw new BadRequestException(
-          'No mobile number is linked to this account. Please contact system admin.'
-        );
-      }
-      identifier = user.mobile_number;
-    }
+    // Store under both identifier and email for reliable lookup
+    this.adminResetOtps.set(identifier.toLowerCase(), { otp, expiresAt });
+    this.adminResetOtps.set(user.email.toLowerCase(), { otp, expiresAt });
 
-    // Send OTP via BulkSMSBD API
-    let formattedNumber = identifier;
-    if (formattedNumber.startsWith('01')) {
-      formattedNumber = '88' + formattedNumber;
-    } else if (formattedNumber.startsWith('+8801')) {
-      formattedNumber = formattedNumber.replace('+', '');
-    }
-
-    const apiKey = this.config.get<string>('BULKSMS_API_KEY');
-    const senderId = this.config.get<string>('BULKSMS_SENDER_ID');
-
-    const message = `Your ${senderId} OTP is ${otp}`;
-    const apiUrl = `https://bulksmsbd.net/api/smsapi?api_key=${apiKey}&type=text&number=${formattedNumber}&senderid=${encodeURIComponent(senderId)}&message=${encodeURIComponent(message)}`;
-
-    try {
-      const response = await fetch(apiUrl, { method: 'POST' });
-      const data = await response.json();
-
-      if (data && (data.response_code === 202 || data.success === true || String(data.response_code) === '202')) {
-        this.logger.log(`[SMS] Admin OTP sent successfully to ${formattedNumber}. Code: 202`);
-      } else {
-        this.logger.error('[SMS] BulkSMSBD response failure:', data);
-        this.logger.warn(`[DEV FALLBACK] Failed to send SMS via gateway. OTP for ${formattedNumber} is ${otp}`);
-      }
-    } catch (err) {
-      this.logger.error('[SMS] Network error while calling BulkSMSBD API:', err);
-      this.logger.warn(`[DEV FALLBACK] Network error. OTP for ${formattedNumber} is ${otp}`);
-    }
+    // Send OTP via Nodemailer
+    await this.mailService.sendPasswordResetOtp(user.email, otp, user.name);
 
     return {
-      message: `OTP sent to your mobile number successfully`,
-      identifier: identifier,
+      message: `Password reset OTP has been sent to your email (${user.email}) successfully`,
+      identifier: user.email,
     };
   }
 

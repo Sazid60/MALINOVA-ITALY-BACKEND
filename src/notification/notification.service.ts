@@ -216,46 +216,18 @@ export class NotificationService implements OnModuleInit {
     }
 
     const eventsList = [
-      { code: 'order.placed', desc: 'Sent when customer places an order', cat: 'order' },
-      { code: 'order.confirmed', desc: 'Sent when admin confirms the order', cat: 'order' },
-      { code: 'order.processing', desc: 'Sent when admin starts processing', cat: 'order' },
-      { code: 'order.dispatched', desc: 'Sent when order is dispatched for delivery', cat: 'order' },
-      { code: 'order.delivered', desc: 'Sent when order is delivered', cat: 'order' },
-      { code: 'order.cancelled', desc: 'Sent when admin cancels the order', cat: 'order' },
-      { code: 'cancel_request.submitted', desc: 'Sent when client submits cancel request', cat: 'cancel' },
-      { code: 'cancel_request.approved', desc: 'Sent when admin approves cancel request', cat: 'cancel' },
-      { code: 'cancel_request.rejected', desc: 'Sent when admin rejects cancel request', cat: 'cancel' },
-      { code: 'return_request.submitted', desc: 'Sent when client submits return request', cat: 'return' },
-      { code: 'return_request.approved', desc: 'Sent when admin approves return request', cat: 'return' },
-      { code: 'return_request.rejected', desc: 'Sent when admin rejects return request', cat: 'return' },
-      { code: 'delivery.in_transit', desc: 'Sent when Pathao picks up order', cat: 'delivery' },
-      { code: 'delivery.out_for_delivery', desc: 'Sent when rider is on the way', cat: 'delivery' },
-      { code: 'delivery.failed', desc: 'Sent when delivery attempt fails', cat: 'delivery' },
-      { code: 'payment.confirmed', desc: 'Sent when SSLCommerz payment is confirmed', cat: 'payment' },
-      { code: 'emi.reminder', desc: 'EMI installment due reminder sent to customer', cat: 'emi' },
-      { code: 'emi.overdue', desc: 'EMI installment overdue notice sent to customer', cat: 'emi' },
-      { code: 'emi.paid', desc: 'EMI installment collected — payment receipt sent to customer', cat: 'emi' },
       { code: 'otp.password_reset', desc: 'OTP for password reset', cat: 'otp' },
-      { code: 'servicing.quote_ready', desc: 'Service quote ready for customer approval', cat: 'servicing' },
-      { code: 'servicing.ready', desc: 'Repaired device ready for pickup', cat: 'servicing' },
-      { code: 'servicing.returned', desc: 'Device returned to customer without repair', cat: 'servicing' },
-      { code: 'servicing.cancelled', desc: 'Service claim cancelled', cat: 'servicing' },
     ];
 
-    // Clean up obsolete servicing events
-    const obsoleteCodes = [
-      'servicing.job_created',
-      'servicing.approved',
-      'servicing.delivered',
-      'servicing.otp_collect',
-      'warranty.claim_status',
-    ];
-    for (const code of obsoleteCodes) {
-      const obsoleteEvt = await this.eventRepo.findOne({ where: { event_code: code } });
-      if (obsoleteEvt) {
-        await this.templateRepo.delete({ event_id: obsoleteEvt.id });
-        await this.eventRepo.delete({ id: obsoleteEvt.id });
-      }
+    // Clean up all non-OTP and obsolete notification events & templates
+    const obsoleteEvents = await this.eventRepo
+      .createQueryBuilder('event')
+      .where("event.event_code != 'otp.password_reset'")
+      .getMany();
+
+    for (const obsoleteEvt of obsoleteEvents) {
+      await this.templateRepo.delete({ event_id: obsoleteEvt.id });
+      await this.eventRepo.delete({ id: obsoleteEvt.id });
     }
 
     const defaults = this.getDefaultTemplatesMap();
@@ -294,29 +266,6 @@ export class NotificationService implements OnModuleInit {
 
   private getDefaultTemplatesMap(): Record<string, string> {
     return {
-      'order.placed': "Dear {customerName}, thank you for your order #{orderNumber}! Total: BDT {totalAmount}. We'll notify you when shipped. - {shopName}",
-      'order.confirmed': 'Hi {customerName}, your order #{orderNumber} has been confirmed and is being prepared. - {shopName}',
-      'order.processing': 'Hi {customerName}, your order #{orderNumber} is now being processed. - {shopName}',
-      'order.dispatched': 'Great news {customerName}! Your order #{orderNumber} is on the way. Track: {trackingCode} - {shopName}',
-      'order.delivered': 'Dear {customerName}, your order #{orderNumber} has been delivered. Total: BDT {totalAmount}. Thank you! - {shopName}',
-      'order.cancelled': 'Dear {customerName}, your order #{orderNumber} has been cancelled. Reason: {reason}. - {shopName}',
-      'cancel_request.submitted': 'Dear {customerName}, your cancel request for order #{orderNumber} has been submitted and is pending approval. - {shopName}',
-      'cancel_request.approved': 'Dear {customerName}, your cancel request for order #{orderNumber} has been approved. - {shopName}',
-      'cancel_request.rejected': 'Dear {customerName}, your cancel request for order #{orderNumber} was not approved. Reason: {reason}. - {shopName}',
-      'return_request.submitted': 'Dear {customerName}, your return request for order #{orderNumber} has been submitted and is pending review. - {shopName}',
-      'return_request.approved': 'Dear {customerName}, your return request for order #{orderNumber} has been approved. Refund: BDT {refundAmount}. - {shopName}',
-      'return_request.rejected': 'Dear {customerName}, your return request for order #{orderNumber} was not approved. Reason: {reason}. - {shopName}',
-      'delivery.in_transit': 'Dear {customerName}, your order #{orderNumber} has been picked up and is on its way! - {shopName}',
-      'delivery.out_for_delivery': 'Dear {customerName}, your order #{orderNumber} is out for delivery and will arrive soon! - {shopName}',
-      'delivery.failed': 'Dear {customerName}, delivery attempt for order #{orderNumber} was unsuccessful. Reason: {reason}. Please contact us. - {shopName}',
-      'payment.confirmed': 'Dear {customerName}, payment of BDT {totalAmount} for order #{orderNumber} confirmed via {paymentMethod}. Thank you! - {shopName}',
-      'emi.reminder': 'Dear {customerName}, reminder: EMI installment #{installmentNo} of BDT {amount} for order #{orderNumber} is due on {dueDate} ({daysLeft} days left). Please pay on time. - {shopName}',
-      'emi.overdue': 'Dear {customerName}, your EMI installment #{installmentNo} of BDT {amount} for order #{orderNumber} was due on {dueDate} and is now OVERDUE. Please pay immediately. - {shopName}',
-      'emi.paid': 'Dear {customerName}, payment received! EMI installment #{installmentNo} of BDT {amount} for order #{orderNumber} has been collected successfully. Thank you! - {shopName}',
-      'servicing.quote_ready': 'Dear {customerName}, the repair quote for your {productName} (Job: {jobCode}) is ready. Estimated cost: BDT {quoteAmount}. Please respond to approve. - {shopName}',
-      'servicing.ready': 'Dear {customerName}, your {productName} (Job: {jobCode}) is repaired and ready for pickup. Total payable: BDT {payableAmount}. Please visit our outlet. - {shopName}',
-      'servicing.returned': 'Dear {customerName}, on inspection your {productName} (Job: {jobCode}) could not be repaired and has been returned to you as-is. Visit us anytime if we can help. - {shopName}',
-      'servicing.cancelled': 'Dear {customerName}, your service claim (Job: {jobCode}) has been cancelled. Reason: {reason}. - {shopName}',
       'otp.password_reset': 'Your {shopName} OTP is {otp}',
     };
   }

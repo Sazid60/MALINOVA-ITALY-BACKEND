@@ -1,19 +1,31 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, OnModuleInit, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, DataSource } from 'typeorm';
 import { Role } from './role.entity';
 import { Permission } from './permission.entity';
 import { RolePermission } from './role-permission.entity';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { AuthService } from '../auth/auth.service';
+import { seedAdminRbac } from '../database/seeds/admin-seed.helper';
 
 @Injectable()
-export class RolesService {
+export class RolesService implements OnModuleInit {
+  private readonly logger = new Logger(RolesService.name);
+
   constructor(
     @InjectRepository(Role) private roleRepo: Repository<Role>,
     @InjectRepository(Permission) private permRepo: Repository<Permission>,
     @InjectRepository(RolePermission) private rpRepo: Repository<RolePermission>,
+    private readonly dataSource: DataSource,
   ) {}
+
+  async onModuleInit() {
+    try {
+      await seedAdminRbac(this.dataSource);
+    } catch (err: any) {
+      this.logger.error('Failed to sync RBAC permissions on init:', err.message || err);
+    }
+  }
 
   async findAllRoles(page?: number, limit?: number) {
     const where = { is_deleted: false };
